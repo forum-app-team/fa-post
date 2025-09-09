@@ -1,0 +1,28 @@
+{
+  "name": "fa-post",
+  "version": "1.0.0",
+  "description": "The Post & Reply Service for the forum app",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/forum-app-team/fa-post.git"
+  },
+  "author": "Shuxin Huang",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/forum-app-team/fa-post/issues"
+  },
+  "homepage": "https://github.com/forum-app-team/fa-post#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "sequelize": "^6.37.7",
+    "mysql2": "^3.14.5",
+    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.1",
+    "dotenv": "^17.2.2"
+  }
+}
