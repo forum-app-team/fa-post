@@ -1,5 +1,15 @@
 import { Post } from '../models/Post.js';
 
+const isAdmin = (user) => ['admin','super-admin'].includes(user?.role);
+const isOwner = (user, post) => user?.sub === post.userId;
+
+async function loadPost(id, res) {
+    const post = await Post.findByPk(id);
+    if (!post) res.status(404).json({message:'Post not found'});
+    return post;
+}
+
+
 // create a post
 export async function createPost(req, res, next) {
     try {
@@ -14,15 +24,11 @@ export async function createPost(req, res, next) {
 // publish a post
 export async function publishPost(req, res, next) {
     try {
-        const { id } = req.params;
-        const post = await Post.findByPk(id);
-        if (!post) return res.status(404).json({ message: 'Not found' });
+        const post = await loadPost(req.params.id, res); if (!post) return;
 
-        if (post.userId !== req.user.sub) return res.status(403).json({ message: 'Forbidden' });
+        if (!isOwner(req.user, post)) return res.status(403).json({message:'Forbidden'});
 
-        if (post.status === 'Banned') return res.status(403).json({ message: 'Post is banned' });
-        if (post.status === 'Deleted') return res.status(403).json({ message: 'Post is deleted' });
-
+        if (post.status !== 'Unpublished') return res.status(400).json({message:'Only drafts can be published'});
         post.status = 'Published';
         await post.save();
 
@@ -45,22 +51,22 @@ export async function listPublished(req, res, next) {
 // get post detail
 export async function getPost(req, res, next) {
     try {
-        const { id } = req.params;
-        const post = await Post.findByPk(id);
-        if (!post) return res.status(404).json({ message: 'Not found' });
+        const post = await loadPost(req.params.id, res); if (!post) return;
 
-        const isOwner = req.user.sub === post.userId;
-        const isAdmin = req.user.role === 'admin';
+        const owner = isOwner(req.user, post);
+        const admin = isAdmin(req.user);
 
-        if (post.status === 'Published') {
-        } else if (['Unpublished','Hidden'].includes(post.status)) {
-            if (!isOwner) return res.status(403).json({ message: 'Forbidden' });
-        } else if (post.status === 'Banned') {
-            if (!(isOwner || isAdmin)) return res.status(403).json({ message: 'Forbidden' });
-        } else if (post.status === 'Deleted') {
-            if (!isOwner) return res.status(403).json({ message: 'Forbidden' });
-        }
-
+        const visible = (() => {
+            switch (post.status) {
+                case 'Published':   return true;
+                case 'Unpublished':
+                case 'Hidden':      return owner;
+                case 'Banned':
+                case 'Deleted':     return owner || admin;
+                default:            return false;
+            }
+        })();
+        if (!visible) return res.status(403).json({message:'Forbidden'});
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }
@@ -69,14 +75,11 @@ export async function getPost(req, res, next) {
 // update post
 export async function updatePost(req, res, next) {
     try {
-        const { id } = req.params;
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({message:'Forbidden'});
+        if (['Banned','Deleted'].includes(post.status)) return res.status(400).json({message:'Cannot edit banned/deleted'});
+
         const { title, content, images, attachments, isArchived } = req.body;
-
-        const post = await Post.findByPk(id);
-        if (!post) return res.status(404).json({ message: 'Not found' });
-        if (post.userId !== req.user.sub) return res.status(403).json({ message: 'Forbidden' });
-        if (post.status === 'Banned' || post.status === 'Deleted') return res.status(403).json({ message: 'Blocked by state' });
-
         const titleChanged = title !== undefined && title !== post.title;
         const contentChanged = content !== undefined && content !== post.content;
 
@@ -92,6 +95,127 @@ export async function updatePost(req, res, next) {
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }
+
+// delete post
+export async function deletePost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({message:'Forbidden'});
+        post.status = 'Deleted';
+        await post.save();
+        return res.status(204).end();
+    } catch (err) { next(err); }
+}
+
+// recover post
+export async function recoverPost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isAdmin(req.user)) return res.status(403).json({message:'Admin only'});
+        if (post.status !== 'Deleted') return res.status(400).json({message:'Not deleted'});
+        post.status = 'Published';
+        await post.save();
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+// archive post
+export async function archivePost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({ message: 'Forbidden' });
+        if (['Banned', 'Deleted'].includes(post.status)) {
+            return res.status(400).json({ message: 'Not allowed on banned/deleted posts' });
+        }
+        if (!post.isArchived) {
+            post.isArchived = true;
+            await post.save();
+        }
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+// unarchive post
+export async function unarchivePost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({ message: 'Forbidden' });
+        if (['Banned', 'Deleted'].includes(post.status)) {
+            return res.status(400).json({ message: 'Not allowed on banned/deleted posts' });
+        }
+        if (post.isArchived) {
+            post.isArchived = false;
+            await post.save();
+        }
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+// hide post
+export async function hidePost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({ message: 'Forbidden' });
+        if (['Banned', 'Deleted'].includes(post.status)) {
+            return res.status(400).json({ message: 'Not allowed on banned/deleted posts' });
+        }
+        if (post.status !== 'Published')
+            return res.status(400).json({ message: 'Only Published can be hidden' });
+
+        post.status = 'Hidden';
+        await post.save();
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+// unhide post
+export async function unhidePost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isOwner(req.user, post)) return res.status(403).json({ message: 'Forbidden' });
+        if (['Banned', 'Deleted'].includes(post.status)) {
+            return res.status(400).json({ message: 'Not allowed on banned/deleted posts' });
+        }
+        if (post.status !== 'Hidden')
+            return res.status(400).json({ message: 'Only Hidden can be unhidden' });
+
+        post.status = 'Published';
+        await post.save();
+
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+
+// ban post
+export async function banPost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isAdmin(req.user)) return res.status(403).json({ message: 'Admin only' });
+        if (post.status !== 'Published') {
+            return res.status(400).json({ message: 'Only Published can be banned' });
+        }
+        post.status = 'Banned';
+        await post.save();
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+// unban post
+export async function unbanPost(req, res, next) {
+    try {
+        const post = await loadPost(req.params.id, res); if (!post) return;
+        if (!isAdmin(req.user)) return res.status(403).json({ message: 'Admin only' });
+        if (post.status !== 'Banned') {
+            return res.status(400).json({ message: 'Not currently banned' });
+        }
+        post.status = 'Published';
+        await post.save();
+        return res.json(toPostDetail(post));
+    } catch (err) { next(err); }
+}
+
+
 
 
 function toHomeCard(p) {
