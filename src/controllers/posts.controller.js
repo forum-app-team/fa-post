@@ -44,7 +44,7 @@ export async function listPublished(req, res, next) {
             order: [['createdAt', 'DESC']],
             attributes: ['id','userId','title','createdAt']
         });
-        return res.json(posts.map(toHomeCard));
+        return res.json(posts.map(toPostDetail));
     } catch (err) { next(err); }
 }
 
@@ -215,17 +215,6 @@ export async function unbanPost(req, res, next) {
     } catch (err) { next(err); }
 }
 
-
-
-
-function toHomeCard(p) {
-    return {
-        id: p.id,
-        userId: p.userId,
-        title: p.title,
-        date: p.createdAt
-    };
-}
 function toPostDetail(p) {
     return {
         id: p.id,
