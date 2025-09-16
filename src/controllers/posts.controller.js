@@ -42,9 +42,9 @@ export async function listPublished(req, res, next) {
         const posts = await Post.findAll({
             where: { status: 'Published' },
             order: [['createdAt', 'DESC']],
-            attributes: ['id','userId','title','createdAt']
+            attributes: ['id','userId','title','createdAt', 'isArchived']
         });
-        return res.json(posts.map(toPostDetail));
+        return res.json(posts.map(toHomeCard));
     } catch (err) { next(err); }
 }
 
@@ -213,6 +213,16 @@ export async function unbanPost(req, res, next) {
         await post.save();
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
+}
+
+function toHomeCard(p) {
+    return {
+        id: p.id,
+        userId: p.userId,
+        title: p.title,
+        postDate: p.createdAt,
+        isArchived: p.isArchived,
+    };
 }
 
 function toPostDetail(p) {
