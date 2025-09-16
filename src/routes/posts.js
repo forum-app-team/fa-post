@@ -18,9 +18,16 @@ import {
     banPost,
     unbanPost
 } from '../controllers/posts.controller.js';
+import {
+    listRepliesByPost,
+    createReply,
+    updateReply,
+    deleteReply,
+} from '../controllers/replies.controller.js';
 
 const r = Router();
 
+// Posts
 r.get('/', requireAuth, listPublished);
 r.get('/:id', requireAuth, getPost);
 
@@ -38,5 +45,11 @@ r.post('/:id/unhide',    requireAuth, requireVerified, unhidePost);
 r.post('/:id/ban',     requireAuth, requireVerified, requireAdmin, banPost);
 r.post('/:id/unban',   requireAuth, requireVerified, requireAdmin, unbanPost);
 r.post('/:id/recover', requireAuth, requireVerified, requireAdmin, recoverPost);
+
+// Replies (nested under /api/posts)
+r.get('/:postId/replies', requireAuth, listRepliesByPost);
+r.post('/:postId/replies', requireAuth, requireVerified, createReply);
+r.put('/:postId/replies/:id', requireAuth, requireVerified, updateReply);
+r.delete('/:postId/replies/:id', requireAuth, requireVerified, deleteReply);
 
 export default r;
