@@ -7,6 +7,7 @@ import {
     createPost,
     publishPost,
     listPublished,
+    getPosts,
     getPost,
     updatePost,
     deletePost,
@@ -28,7 +29,7 @@ import {
 const r = Router();
 
 // Posts
-r.get('/', requireAuth, listPublished);
+r.get('/', requireAuth, getPosts);
 r.get('/:id', requireAuth, getPost);
 
 r.post('/', requireAuth, requireVerified, createPost);
