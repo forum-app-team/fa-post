@@ -1,4 +1,5 @@
 import { Post } from '../models/Post.js';
+import { emitPostEvent } from '../messaging/events.js';
 
 const isAdmin = (user) => ['admin','super-admin'].includes(user?.role);
 const isOwner = (user, post) => user?.sub === post.userId;
@@ -17,6 +18,12 @@ export async function createPost(req, res, next) {
         const { title, content, images = [], attachments = [] } = req.body;
 
         const post = await Post.create({ userId, title, content, images, attachments, status: 'Unpublished' });
+        // Emit post.created
+        await emitPostEvent(req, 'post.created', post, null, {
+            status: post.status,
+            isArchived: !!post.isArchived,
+            title, content, images, attachments
+        });
         return res.status(201).json(toPostDetail(post));
     } catch (err) { next(err); }
 }
@@ -29,8 +36,10 @@ export async function publishPost(req, res, next) {
         if (!isOwner(req.user, post)) return res.status(403).json({message:'Forbidden'});
 
         if (post.status !== 'Unpublished') return res.status(400).json({message:'Only drafts can be published'});
+        const before = { status: post.status };
         post.status = 'Published';
         await post.save();
+        await emitPostEvent(req, 'post.published', post, before, { status: post.status });
 
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
@@ -80,8 +89,21 @@ export async function updatePost(req, res, next) {
         if (['Banned','Deleted'].includes(post.status)) return res.status(400).json({message:'Cannot edit banned/deleted'});
 
         const { title, content, images, attachments, isArchived } = req.body;
+
+        // Snapshot before
+        const prev = {
+            title: post.title,
+            content: post.content,
+            images: post.images,
+            attachments: post.attachments,
+            isArchived: !!post.isArchived,
+        };
+
         const titleChanged = title !== undefined && title !== post.title;
         const contentChanged = content !== undefined && content !== post.content;
+        const imagesChanged = images !== undefined && JSON.stringify(images) !== JSON.stringify(post.images);
+        const attachmentsChanged = attachments !== undefined && JSON.stringify(attachments) !== JSON.stringify(post.attachments);
+        const archivedChanged = typeof isArchived === 'boolean' && isArchived !== post.isArchived;
 
         if (title !== undefined) post.title = title;
         if (content !== undefined) post.content = content;
@@ -92,6 +114,27 @@ export async function updatePost(req, res, next) {
         if (titleChanged || contentChanged) post.lastEditedAt = new Date();
 
         await post.save();
+
+        // post.updated (only for content changes)
+        if (titleChanged || contentChanged || imagesChanged || attachmentsChanged) {
+            const before = {};
+            const after = {};
+            if (titleChanged) { before.title = prev.title; after.title = post.title; }
+            if (contentChanged) { before.content = prev.content; after.content = post.content; }
+            if (imagesChanged) { before.images = prev.images || []; after.images = post.images || []; }
+            if (attachmentsChanged) { before.attachments = prev.attachments || []; after.attachments = post.attachments || []; }
+            await emitPostEvent(req, 'post.updated', post, before, after);
+        }
+
+        // archived state change via update
+        if (archivedChanged) {
+            if (post.isArchived) {
+                await emitPostEvent(req, 'post.archived', post, { isArchived: false }, { isArchived: true });
+            } else {
+                await emitPostEvent(req, 'post.unarchived', post, { isArchived: true }, { isArchived: false });
+            }
+        }
+
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }
@@ -101,8 +144,10 @@ export async function deletePost(req, res, next) {
     try {
         const post = await loadPost(req.params.id, res); if (!post) return;
         if (!isOwner(req.user, post)) return res.status(403).json({message:'Forbidden'});
+        const before = { status: post.status };
         post.status = 'Deleted';
         await post.save();
+        await emitPostEvent(req, 'post.deleted', post, before, { status: post.status });
         return res.status(204).end();
     } catch (err) { next(err); }
 }
@@ -113,8 +158,10 @@ export async function recoverPost(req, res, next) {
         const post = await loadPost(req.params.id, res); if (!post) return;
         if (!isAdmin(req.user)) return res.status(403).json({message:'Admin only'});
         if (post.status !== 'Deleted') return res.status(400).json({message:'Not deleted'});
+        const before = { status: post.status };
         post.status = 'Published';
         await post.save();
+        await emitPostEvent(req, 'post.recovered', post, before, { status: post.status });
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }
@@ -130,6 +177,7 @@ export async function archivePost(req, res, next) {
         if (!post.isArchived) {
             post.isArchived = true;
             await post.save();
+            await emitPostEvent(req, 'post.archived', post, { isArchived: false }, { isArchived: true });
         }
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
@@ -146,6 +194,7 @@ export async function unarchivePost(req, res, next) {
         if (post.isArchived) {
             post.isArchived = false;
             await post.save();
+            await emitPostEvent(req, 'post.unarchived', post, { isArchived: true }, { isArchived: false });
         }
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
@@ -195,8 +244,10 @@ export async function banPost(req, res, next) {
         if (post.status !== 'Published') {
             return res.status(400).json({ message: 'Only Published can be banned' });
         }
+        const before = { status: post.status };
         post.status = 'Banned';
         await post.save();
+        await emitPostEvent(req, 'post.banned', post, before, { status: post.status });
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }
@@ -209,8 +260,10 @@ export async function unbanPost(req, res, next) {
         if (post.status !== 'Banned') {
             return res.status(400).json({ message: 'Not currently banned' });
         }
+        const before = { status: post.status };
         post.status = 'Published';
         await post.save();
+        await emitPostEvent(req, 'post.unbanned', post, before, { status: post.status });
         return res.json(toPostDetail(post));
     } catch (err) { next(err); }
 }

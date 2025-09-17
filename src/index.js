@@ -3,6 +3,7 @@ import app from './app.js';
 import { sequelize } from './config/db.js';
 import { Post } from './models/Post.js';
 import { Reply } from './models/Reply.js';
+import { initRabbit, closeRabbit } from './messaging/rabbit.js';
 
 // Optional: define associations if needed
 // Reply.belongsTo(Post, { foreignKey: 'postId' });
@@ -20,5 +21,16 @@ const PORT = process.env.PORT || 3002;
         console.warn('Database unavailable, starting server without DB (messages endpoint will still work).');
         console.warn(err?.message);
     }
-    app.listen(PORT, () => console.log(`Post service on :${PORT}`));
+
+    // Init RabbitMQ (non-fatal if not available)
+    await initRabbit();
+
+    const server = app.listen(PORT, () => console.log(`Post service on :${PORT}`));
+
+    const shutdown = async () => {
+        try { await closeRabbit(); } catch {}
+        server.close(() => process.exit(0));
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 })();
