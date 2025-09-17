@@ -1,5 +1,6 @@
 import { Post } from '../models/Post.js';
 import { Reply } from '../models/Reply.js';
+import { filterPosts } from '../services/posts.service.js';
 
 const isAdmin = (user) => ['admin','super-admin'].includes(user?.role);
 const isOwner = (user, post) => user?.sub === post.userId;
@@ -46,6 +47,18 @@ export async function listPublished(req, res, next) {
             attributes: ['id','userId','title','createdAt', 'isArchived']
         });
         return res.json(posts.map(toHomeCard));
+    } catch (err) { next(err); }
+}
+
+// generally get posts
+export async function getPosts(req, res, next) {
+    try {
+        if (Object.keys(req.query).length === 0)
+            return await listPublished(req, res, next);
+        if (req.user.role === 'normal' && req.query.status !== 'Published')
+            return res.status(403).json({ message: "Non-admin user can only view published posts" });
+        const ret = await filterPosts(req.query);
+        return res.json(ret);
     } catch (err) { next(err); }
 }
 

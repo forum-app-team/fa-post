@@ -7,6 +7,7 @@ import {
     createPost,
     publishPost,
     listPublished,
+    getPosts,
     getPost,
     updatePost,
     deletePost,
@@ -36,7 +37,7 @@ r.get('/top', requireAuth, listTopPosts);
 r.get('/drafts', requireAuth, listDrafts);
 
 // Posts
-r.get('/', requireAuth, listPublished);
+r.get('/', requireAuth, getPosts);
 r.get('/:id', requireAuth, getPost);
 
 r.post('/', requireAuth, requireVerified, createPost);
