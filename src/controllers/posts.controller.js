@@ -2,7 +2,7 @@ import { Post } from '../models/Post.js';
 import { Reply } from '../models/Reply.js';
 import { filterPosts } from '../services/posts.service.js';
 
-const isAdmin = (user) => ['admin','super-admin'].includes(user?.role);
+const isAdmin = (user) => ['admin','super'].includes(user?.role);
 const isOwner = (user, post) => user?.sub === post.userId;
 
 async function loadPost(id, res) {
