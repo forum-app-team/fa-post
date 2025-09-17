@@ -28,6 +28,14 @@ import {
 
 const r = Router();
 
+
+import { listTopPosts, listDrafts } from '../controllers/posts.controller.js';
+
+// Top posts (by replies, desc)
+r.get('/top', requireAuth, listTopPosts);
+// Drafts (unpublished posts for current user)
+r.get('/drafts', requireAuth, listDrafts);
+
 // Posts
 r.get('/', requireAuth, getPosts);
 r.get('/:id', requireAuth, getPost);

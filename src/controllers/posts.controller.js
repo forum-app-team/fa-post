@@ -1,4 +1,5 @@
 import { Post } from '../models/Post.js';
+import { Reply } from '../models/Reply.js';
 import { filterPosts } from '../services/posts.service.js';
 
 const isAdmin = (user) => ['admin','super-admin'].includes(user?.role);
@@ -84,6 +85,44 @@ export async function getPost(req, res, next) {
     } catch (err) { next(err); }
 }
 
+// Top posts (by replies, desc)
+export async function listTopPosts(req, res, next) {
+    try {
+        const limit = parseInt(req.query.limit, 10) || 3;
+        const userId = req.user.sub;
+        const posts = await Post.findAll({
+            where: { status: 'Published', userId },
+            attributes: ['id', 'userId', 'title', 'createdAt', 'isArchived'],
+            order: [['createdAt', 'DESC']],
+        });
+        // Count replies for each post
+        const postsWithReplies = await Promise.all(posts.map(async p => {
+            const repliesCount = await Reply.count({ where: { postId: p.id } });
+            return { ...toHomeCard(p), repliesCount };
+        }));
+        // Sort by repliesCount desc and take top N
+        postsWithReplies.sort((a, b) => b.repliesCount - a.repliesCount);
+        return res.json(postsWithReplies.slice(0, limit));
+    } catch (err) { next(err); }
+}
+
+// Drafts (unpublished posts for current user)
+export async function listDrafts(req, res, next) {
+    try {
+        const userId = req.user.sub;
+        const drafts = await Post.findAll({
+            where: { status: 'Unpublished', userId },
+            order: [['createdAt', 'DESC']],
+            attributes: ['id', 'userId', 'title', 'createdAt', 'isArchived', 'updatedAt'],
+        });
+        return res.json(drafts.map(p => ({
+            id: p.id,
+            title: p.title,
+            updatedAt: p.updatedAt,
+            isArchived: p.isArchived,
+        })));
+    } catch (err) { next(err); }
+}
 
 // update post
 export async function updatePost(req, res, next) {
